@@ -1,4 +1,7 @@
 import io
+import zipfile
+import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -42,7 +45,6 @@ st.markdown(
         padding-bottom: 3rem;
         max-width: 1260px;
     }
-    /* Mengubah st.container(border=True) menjadi Kartu Bento Putih Rapi */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #FFFFFF;
         border-radius: 16px !important;
@@ -50,7 +52,6 @@ st.markdown(
         box-shadow: 0 4px 12px rgba(20, 83, 45, 0.05);
         padding: 4px;
     }
-    /* Banner Utama Ikonik Jakarta */
     .jkt-hero {
         background: linear-gradient(130deg, #0F3F24 0%, #15803D 62%, #0D9488 100%);
         border-radius: 20px;
@@ -83,7 +84,6 @@ st.markdown(
         margin: 0;
         line-height: 1.5;
     }
-    /* Pita Judul Seksi ala Infografis */
     .sec-banner {
         background: linear-gradient(90deg, #14532D 0%, #15803D 100%);
         color: #FFFFFF;
@@ -106,7 +106,6 @@ st.markdown(
         display: inline-block;
         margin-bottom: 8px;
     }
-    /* Kartu Warna Profil Atas */
     .stat-box {
         border-radius: 14px;
         padding: 14px 18px;
@@ -119,7 +118,6 @@ st.markdown(
     .stat-num { font-size: 1.85rem; font-weight: 800; line-height: 1.1; margin: 2px 0; }
     .stat-lbl { font-size: 0.8rem; opacity: 0.95; font-weight: 600; }
     .stat-sub { font-size: 0.74rem; opacity: 0.88; margin-top: 4px; }
-    /* Kartu 4 Sektor Aksi Mitigasi di Bawah */
     .aksi-header {
         padding: 8px 14px;
         border-radius: 10px;
@@ -147,6 +145,8 @@ st.markdown(
 
 
 def fmt_id(x, d=0):
+    if pd.isna(x):
+        return "-"
     return f"{x:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
@@ -156,6 +156,31 @@ def fmt_delta(val_baru, val_acuan, d=0, satuan=""):
         return ""
     tanda = "+" if selisih > 0 else "−"
     return f'<span class="delta-pill">Δ {tanda}{fmt_id(abs(selisih), d)}{satuan}</span>'
+
+
+def ke_angka(val, default=0.0):
+    if pd.isna(val):
+        return default
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    s = str(val).strip()
+    if s in ["NE", "NO", "NA", "-", ""]:
+        return default
+    neg = False
+    if s.startswith("(") and s.endswith(")"):
+        neg = True
+        s = s[1:-1].strip()
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")
+    elif "." in s and "," not in s:
+        parts = s.split(".")
+        if all(len(p) == 3 for p in parts[1:]):
+            s = s.replace(".", "")
+    try:
+        v = float(s)
+        return -v if neg else v
+    except Exception:
+        return default
 
 
 def tata_letak(fig, y_title=None, tinggi=290, show_legend=True):
@@ -176,39 +201,275 @@ def tata_letak(fig, y_title=None, tinggi=290, show_legend=True):
 
 
 # ==========================================================
-# 2. DATA ACUAN RESMI (RINGKASAN EKSEKUTIF LAPORAN DLH 2026)
+# 2. ENGINE EXCEL (.XLSX) MURNI PYTHON (TANPA WAJIB OPENPYXL)
+# ==========================================================
+def _kol_huruf(n):
+    s = ""
+    while n >= 0:
+        s = chr(n % 26 + 65) + s
+        n = n // 26 - 1
+    return s
+
+
+def _df_ke_sheet_xml(df):
+    baris_xml = []
+    cols = list(df.columns)
+    sel_header = [
+        f'<c r="{_kol_huruf(c)}1" t="inlineStr"><is><t>{escape(str(k))}</t></is></c>'
+        for c, k in enumerate(cols)
+    ]
+    baris_xml.append(f'<row r="1">{"".join(sel_header)}</row>')
+
+    for r_idx, row in enumerate(df.itertuples(index=False), start=2):
+        sel_data = []
+        for c_idx, val in enumerate(row):
+            ref = f"{_kol_huruf(c_idx)}{r_idx}"
+            if pd.isna(val):
+                continue
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                sel_data.append(f'<c r="{ref}"><v>{val}</v></c>')
+            else:
+                sel_data.append(f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(val))}</t></is></c>')
+        baris_xml.append(f'<row r="{r_idx}">{"".join(sel_data)}</row>')
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<sheetData>{"".join(baris_xml)}</sheetData></worksheet>'
+    )
+
+
+def konversi_ke_excel(daftar_sheet):
+    buffer = io.BytesIO()
+    try:
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            for nama, df in daftar_sheet:
+                df.to_excel(writer, sheet_name=nama, index=False)
+        return buffer.getvalue()
+    except Exception:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            overrides = "".join(
+                f'<Override PartName="/xl/worksheets/sheet{i}.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+                for i in range(1, len(daftar_sheet) + 1)
+            )
+            zf.writestr(
+                "[Content_Types].xml",
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                '<Default Extension="xml" ContentType="application/xml"/>'
+                '<Override PartName="/xl/workbook.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+                f"{overrides}</Types>",
+            )
+            zf.writestr(
+                "_rels/.rels",
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+                'Target="xl/workbook.xml"/></Relationships>',
+            )
+            sheets_tag = "".join(
+                f'<sheet name="{nama}" sheetId="{i}" r:id="rId{i}"/>'
+                for i, (nama, _) in enumerate(daftar_sheet, start=1)
+            )
+            zf.writestr(
+                "xl/workbook.xml",
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                f"<sheets>{sheets_tag}</sheets></workbook>",
+            )
+            rels_tag = "".join(
+                f'<Relationship Id="rId{i}" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+                f'Target="worksheets/sheet{i}.xml"/>'
+                for i in range(1, len(daftar_sheet) + 1)
+            )
+            zf.writestr(
+                "xl/_rels/workbook.xml.rels",
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                f"{rels_tag}</Relationships>",
+            )
+            for i, (_, df) in enumerate(daftar_sheet, start=1):
+                zf.writestr(f"xl/worksheets/sheet{i}.xml", _df_ke_sheet_xml(df))
+        return buffer.getvalue()
+
+
+def _indeks_kolom_ref(ref):
+    huruf = "".join(ch for ch in ref if ch.isalpha())
+    idx = 0
+    for ch in huruf:
+        idx = idx * 26 + (ord(ch.upper()) - 64)
+    return idx - 1
+
+
+def baca_excel_aman(uploaded_file):
+    data_bytes = uploaded_file.getvalue()
+    try:
+        xls = pd.ExcelFile(io.BytesIO(data_bytes))
+        return {nama: pd.read_excel(xls, nama) for nama in xls.sheet_names}
+    except Exception:
+        hasil = {}
+        ns = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        with zipfile.ZipFile(io.BytesIO(data_bytes), "r") as zf:
+            shared = []
+            if "xl/sharedStrings.xml" in zf.namelist():
+                root_ss = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+                for si in root_ss.findall("a:si", ns):
+                    teks = "".join(t.text or "" for t in si.findall(".//a:t", ns))
+                    shared.append(teks)
+
+            wb_root = ET.fromstring(zf.read("xl/workbook.xml"))
+            rels_root = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+            peta_target = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels_root}
+
+            for sh in wb_root.findall(".//a:sheet", ns):
+                nama = sh.attrib["name"]
+                rid = sh.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                target = peta_target.get(rid, "").lstrip("/")
+                if not target.startswith("xl/"):
+                    target = "xl/" + target
+                ws_root = ET.fromstring(zf.read(target))
+                rows_data = []
+                for row_el in ws_root.findall(".//a:sheetData/a:row", ns):
+                    row_dict = {}
+                    for c_el in row_el.findall("a:c", ns):
+                        col_idx = _indeks_kolom_ref(c_el.attrib.get("r", "A1"))
+                        tipe = c_el.attrib.get("t", "")
+                        if tipe == "inlineStr":
+                            t_el = c_el.find(".//a:t", ns)
+                            val = t_el.text if t_el is not None else ""
+                        elif tipe == "s":
+                            v_el = c_el.find("a:v", ns)
+                            val = shared[int(v_el.text)] if v_el is not None and v_el.text else ""
+                        else:
+                            v_el = c_el.find("a:v", ns)
+                            if v_el is not None and v_el.text is not None:
+                                try:
+                                    f_val = float(v_el.text)
+                                    val = int(f_val) if f_val.is_integer() else f_val
+                                except ValueError:
+                                    val = v_el.text
+                            else:
+                                val = None
+                        row_dict[col_idx] = val
+                    rows_data.append(row_dict)
+                if rows_data:
+                    max_c = max(max(r.keys(), default=0) for r in rows_data)
+                    headers = [rows_data[0].get(i, f"Col_{i}") for i in range(max_c + 1)]
+                    isi = [[r.get(i, None) for i in range(max_c + 1)] for r in rows_data[1:]]
+                    hasil[nama] = pd.DataFrame(isi, columns=headers)
+        return hasil
+
+
+# ==========================================================
+# 3. DATA ACUAN RESMI (FORMAT MATRIKS RINGKASAN EKSEKUTIF)
 # ==========================================================
 @st.cache_data
 def buat_data_acuan():
-    # Sheet 1: Ringkasan Profil & Top 5 Direct (Tahun Berjalan 2025)
-    df_profil = pd.DataFrame([
-        {"Parameter": "Tahun_Laporan", "Nilai": 2025, "Satuan": "Tahun", "Keterangan": "Tahun inventarisasi terbaru"},
-        {"Parameter": "Grand_Total_AR2", "Nilai": 66221, "Satuan": "Gg CO2e", "Keterangan": "Total emisi Direct + Indirect (AR2)"},
-        {"Parameter": "Grand_Total_AR5", "Nilai": 66967, "Satuan": "Gg CO2e", "Keterangan": "Total emisi Direct + Indirect (AR5)"},
-        {"Parameter": "Total_Direct_AR2", "Nilai": 31715, "Satuan": "Gg CO2e", "Keterangan": "Total emisi langsung (AR2)"},
-        {"Parameter": "Total_Direct_AR5", "Nilai": 32461, "Satuan": "Gg CO2e", "Keterangan": "Total emisi langsung (AR5)"},
-        {"Parameter": "Total_Indirect_Listrik", "Nilai": 34507, "Satuan": "Gg CO2e", "Keterangan": "Emisi tidak langsung listrik Jamali"},
-        {"Parameter": "Konsumsi_Listrik_GWh", "Nilai": 38196, "Satuan": "GWh", "Keterangan": "Konsumsi listrik PLN DKI Jakarta"},
-        {"Parameter": "Direct_Energi", "Nilai": 29311, "Satuan": "Gg CO2e", "Keterangan": "Sektor Energi (Tabel 1 AR2)"},
-        {"Parameter": "Direct_Limbah", "Nilai": 2444, "Satuan": "Gg CO2e", "Keterangan": "Sektor Limbah (Tabel 1 AR2)"},
-        {"Parameter": "Direct_AFOLU", "Nilai": -40, "Satuan": "Gg CO2e", "Keterangan": "Sektor AFOLU serapan bersih (Tabel 1 AR2)"},
-        {"Parameter": "Top1_Transportasi", "Nilai": 18293, "Satuan": "Gg CO2e", "Keterangan": "Subsektor Transportasi (Tabel 5.8)"},
-        {"Parameter": "Top2_Pembangkit", "Nilai": 7128, "Satuan": "Gg CO2e", "Keterangan": "Subsektor Pembangkit Listrik (Tabel 5.8)"},
-        {"Parameter": "Top3_Industri", "Nilai": 2348, "Satuan": "Gg CO2e", "Keterangan": "Subsektor Industri Manufaktur (Tabel 5.8)"},
-        {"Parameter": "Top4_Limbah_TPA", "Nilai": 1403, "Satuan": "Gg CO2e", "Keterangan": "Subsektor Limbah Padat TPA (Tabel 5.8)"},
-        {"Parameter": "Top5_Residensial", "Nilai": 1391, "Satuan": "Gg CO2e", "Keterangan": "Subsektor Rumah Tangga Direct (Tabel 5.8)"},
-        {"Parameter": "Reduksi_Sektoral_JtTon", "Nilai": 25.80, "Satuan": "Juta Ton CO2e", "Keterangan": "Selisih Baseline vs Inventori"},
-        {"Parameter": "Persen_Reduksi_Sektoral", "Nilai": 28.0, "Satuan": "%", "Keterangan": "Persentase reduksi terhadap Baseline"},
+    tahun_kol = [str(y) for y in range(2010, 2026)]
+
+    # Sheet 1: Tabel 2 Ringkasan Eksekutif — Profil Emisi dan Serapan GRK (AR2) dalam Gg CO2e
+    t2_ar2_rows = [
+        ("1. Energi", [18822, 19570, 21120, 24023, 22662, 25559, 25781, 26485, 28354, 27665, 22779, 24885, 26715, 26919, 27669, 29311]),
+        ("1A Aktivitas pembakaran bahan bakar", [18768, 19516, 21066, 23969, 22608, 25505, 25727, 26437, 28312, 27622, 22741, 24855, 26686, 26893, 27644, 29284]),
+        ("1A1 Industri energi : Pembangkit listrik", [8044, 7785, 6843, 7521, 8010, 7737, 7227, 6673, 7938, 8744, 7301, 8530, 7217, 7443, 7803, 7128]),
+        ("1A2 Industri Manufaktur", [2330, 2326, 2256, 2755, 1935, 2083, 2648, 3465, 3417, 2064, 2081, 2219, 2443, 1992, 2555, 2348]),
+        ("1A3 Transportasi", [7258, 8201, 10722, 12453, 11424, 14102, 14293, 14671, 15325, 15364, 11903, 12642, 15543, 15992, 15806, 18293]),
+        ("1A4 Lainnya (Komersial dan Residensial)", [1130, 1198, 1239, 1233, 1233, 1577, 1553, 1622, 1625, 1442, 1450, 1459, 1477, 1458, 1472, 1508]),
+        ("1A4a Komersial", [90, 95, 99, 98, 98, 126, 124, 130, 130, 115, 116, 117, 118, 116, 117, 117]),
+        ("1A4b Residensial (Rumah Tangga)", [1040, 1103, 1140, 1135, 1135, 1451, 1429, 1492, 1495, 1327, 1334, 1342, 1359, 1342, 1355, 1391]),
+        ("1A5 Lain", [6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 6, 6, 6, 7, 8, 7]),
+        ("1B Emisi fugitive", [54, 54, 54, 54, 54, 54, 54, 48, 42, 43, 38, 30, 29, 25, 25, 28]),
+        ("2. IPPU", ["NE"] * 16),
+        ("3. AFOLU", [163, 187, 180, 184, 46, 39, 44, 51, 58, -14, -29, 38, -45, -60, -51, -40]),
+        ("3A Peternakan", [1] * 16),
+        ("3B Lahan*", [160, 185, 178, 182, 45, 38, 43, 49, 57, -16, -31, 37, -46, -61, -53, -41]),
+        ("3C Sumber agregat dan emisi non CO2", [2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0]),
+        ("4. Limbah", [1873, 1837, 1746, 1845, 1915, 2000, 2083, 2199, 2284, 2305, 2396, 2450, 2478, 2369, 2362, 2444]),
+        ("4A Pengelolaan limbah padat di TPA", [941, 892, 791, 886, 941, 1010, 1090, 1167, 1231, 1249, 1336, 1363, 1379, 1296, 1286, 1403]),
+        ("4B Pengelolaan limbah padat secara biologis", ["-", 1.1, 1.1, 1.1, 1.1, 1.0, 1.0, 0.0, 0.1, 0.1, 0.1, 0.2, 0.2, 0.4, 0.2, 0.0]),
+        ("4C Insinerasi dan pembakaran terbuka", ["-", "-", "-", "-", "-", "-", "-", 1, 1, "-", 0, 1, 1, 0.3, 0.1, 0.3]),
+        ("4D Pengolahan limbah cair", [932, 944, 954, 958, 973, 989, 993, 1031, 1051, 1057, 1060, 1086, 1099, 1072, 1076, 1040]),
+        ("Total emisi GRK direct", [20858, 21595, 23047, 26052, 24624, 27599, 27909, 28735, 30696, 29956, 25146, 27373, 29148, 29227, 29979, 31715]),
+        ("Emisi GRK indirect", [19733, 21787, 24988, 29028, 26927, 29065, 30982, 28378, 29309, 30907, 29015, 29301, 31145, 33420, 34509, 34507]),
+        ("Grand total emisi GRK (direct + indirect)", [40590, 43382, 48035, 55080, 51551, 56664, 58891, 57113, 60005, 60863, 54161, 56674, 60293, 62647, 64488, 66221]),
+        ("Konsumsi Listrik PLN (GWh)", [21853, 24127, 27672, 32146, 29819, 32187, 34310, 31426, 32457, 34227, 32132, 32448, 34491, 37010, 38198, 38196]),
+    ]
+    df_ar2 = pd.DataFrame([[s] + v for s, v in t2_ar2_rows], columns=["Sektor"] + tahun_kol)
+
+    # Sheet 2: Tabel 3 Ringkasan Eksekutif — Profil Emisi dan Serapan GRK (AR5) dalam Gg CO2e
+    t3_ar5_rows = [
+        ("1. Energi", [18839, 19589, 21136, 24037, 22675, 25569, 25791, 26492, 28358, 27668, 22780, 24883, 26713, 26914, 27668, 29315]),
+        ("1A Aktivitas pembakaran bahan bakar", [18770, 19520, 21067, 23967, 22606, 25500, 25721, 26431, 28304, 27613, 22731, 24845, 26676, 26881, 27635, 29278]),
+        ("1A1 Industri energi: Pembangkit listrik", [8044, 7784, 6843, 7522, 8010, 7737, 7227, 6673, 7939, 8744, 7301, 8530, 7217, 7444, 7804, 7128]),
+        ("1A2 Industri Manufaktur", [2330, 2326, 2256, 2755, 1935, 2083, 2648, 3465, 3417, 2064, 2081, 2219, 2442, 1992, 2555, 2348]),
+        ("1A3 Transportasi", [7259, 8204, 10721, 12451, 11421, 14095, 14286, 14664, 15316, 15355, 11893, 12631, 15533, 15979, 15796, 18287]),
+        ("1A4 Lainnya (Komersial dan Residensial)", [1130, 1199, 1240, 1234, 1234, 1578, 1554, 1622, 1625, 1443, 1450, 1460, 1478, 1459, 1473, 1509]),
+        ("1A5 Lain", [6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 6, 6, 6, 7, 8, 7]),
+        ("1B Emisi fugitive", [69, 69, 69, 69, 69, 69, 69, 62, 54, 55, 48, 38, 37, 32, 32, 36]),
+        ("2. IPPU", ["NE"] * 16),
+        ("3. AFOLU", [163, 188, 181, 185, 47, 39, 45, 51, 59, -14, -29, 38, -45, -60, -51, -40]),
+        ("3A Peternakan", [1] * 16),
+        ("3B Lahan*", [160, 185, 178, 182, 45, 38, 43, 49, 57, -16, -31, 37, -46, -61, -53, -41]),
+        ("3C Sumber agregat dan emisi non-CO2", [2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0]),
+        ("4. Limbah", [2444, 2395, 2270, 2405, 2494, 2608, 2720, 2865, 2973, 3004, 3126, 3196, 3236, 3088, 3078, 3186]),
+        ("4A Pengelolaan limbah padat di TPA", [1255, 1189, 1054, 1181, 1255, 1346, 1453, 1556, 1642, 1665, 1782, 1817, 1838, 1728, 1714, 1870]),
+        ("4B Pengelolaan limbah padat secara biologis", ["-", 0.9, 0.9, 0.9, 0.9, 0.9, 0.8, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.3, 0.2, 0.0]),
+        ("4C Insinerasi dan pembakaran terbuka", ["-", "-", "-", "-", "-", "-", "-", 1, 1, "-", 0, 1, 1, 0, 0, 0]),
+        ("4D Pengolahan limbah cair", [1189, 1205, 1214, 1223, 1238, 1261, 1266, 1308, 1330, 1339, 1344, 1378, 1397, 1360, 1364, 1315]),
+        ("Total emisi GRK direct", [21446, 22171, 23586, 26626, 25216, 28216, 28555, 29408, 31390, 30658, 25876, 28118, 29905, 29942, 30694, 32461]),
+        ("Emisi GRK indirect", [19733, 21787, 24988, 29028, 26927, 29065, 30982, 28378, 29309, 30907, 29015, 29301, 31145, 33420, 34509, 34507]),
+        ("Grand total emisi GRK (direct + indirect)", [41179, 43959, 48574, 55654, 52143, 57281, 59536, 57787, 60699, 61565, 54891, 57419, 61050, 63362, 65204, 66967]),
+    ]
+    df_ar5 = pd.DataFrame([[s] + v for s, v in t3_ar5_rows], columns=["Sektor"] + tahun_kol)
+
+    # Sheet 3: Tabel 2 (Halaman 9–10 PDF) — Capaian penurunan emisi GRK aksi-aksi mitigasi di Provinsi DKI Jakarta pada tahun 2025
+    df_aksi = pd.DataFrame([
+        {"Sektor": "Energi", "Aksi Mitigasi": "Efisien energi di pembangkit Muara Karang", "Tingkat emisi baseline (Ton CO₂e)": 4197637, "Tingkat emisi mitigasi (Ton CO₂e)": 2936879, "Penurunan emisi (Ton CO₂e)": 1260758},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan PLTS rooftop di gedung pemerintahan, sekolah, komersial, industri, rumah tangga dan PLTS komunal", "Tingkat emisi baseline (Ton CO₂e)": 20678, "Tingkat emisi mitigasi (Ton CO₂e)": 0, "Penurunan emisi (Ton CO₂e)": 20678},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Energi bersih: PLTSa dan pembangkit listrik berbahan bakar LFG", "Tingkat emisi baseline (Ton CO₂e)": 9036, "Tingkat emisi mitigasi (Ton CO₂e)": 847, "Penurunan emisi (Ton CO₂e)": 8189},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Substitusi BBM ke gas di Pembangkit Muara Karang dan IP Tanjung Priok", "Tingkat emisi baseline (Ton CO₂e)": 10460482, "Tingkat emisi mitigasi (Ton CO₂e)": 7161905, "Penurunan emisi (Ton CO₂e)": 3298577},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan biofuel di sub sektor industri", "Tingkat emisi baseline (Ton CO₂e)": 372543, "Tingkat emisi mitigasi (Ton CO₂e)": 225976, "Penurunan emisi (Ton CO₂e)": 146566},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan biofuel di sub sektor komersial", "Tingkat emisi baseline (Ton CO₂e)": 24280, "Tingkat emisi mitigasi (Ton CO₂e)": 14728, "Penurunan emisi (Ton CO₂e)": 9552},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Penerapan green building di gedung pemerintah dan komersial", "Tingkat emisi baseline (Ton CO₂e)": 661638, "Tingkat emisi mitigasi (Ton CO₂e)": 575090, "Penurunan emisi (Ton CO₂e)": 86547},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan LHE untuk lampu jalan", "Tingkat emisi baseline (Ton CO₂e)": 603905, "Tingkat emisi mitigasi (Ton CO₂e)": 334548, "Penurunan emisi (Ton CO₂e)": 269357},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan PJU TS", "Tingkat emisi baseline (Ton CO₂e)": 113, "Tingkat emisi mitigasi (Ton CO₂e)": 0, "Penurunan emisi (Ton CO₂e)": 113},
+        {"Sektor": "Energi", "Aksi Mitigasi": "Pemadaman Listrik berkala", "Tingkat emisi baseline (Ton CO₂e)": 366, "Tingkat emisi mitigasi (Ton CO₂e)": 0, "Penurunan emisi (Ton CO₂e)": 366},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Manajemen transportasi melalui penerapan sistem ITS", "Tingkat emisi baseline (Ton CO₂e)": 67670762, "Tingkat emisi mitigasi (Ton CO₂e)": 58883095, "Penurunan emisi (Ton CO₂e)": 8787667},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Busway", "Tingkat emisi baseline (Ton CO₂e)": 451139, "Tingkat emisi mitigasi (Ton CO₂e)": 49028, "Penurunan emisi (Ton CO₂e)": 402366},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Feeder busway", "Tingkat emisi baseline (Ton CO₂e)": 1190711, "Tingkat emisi mitigasi (Ton CO₂e)": 206661, "Penurunan emisi (Ton CO₂e)": 966073},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan kereta api Listrik (KRL)", "Tingkat emisi baseline (Ton CO₂e)": 245318, "Tingkat emisi mitigasi (Ton CO₂e)": 144691, "Penurunan emisi (Ton CO₂e)": 100627},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan MRT", "Tingkat emisi baseline (Ton CO₂e)": 16295, "Tingkat emisi mitigasi (Ton CO₂e)": 6143, "Penurunan emisi (Ton CO₂e)": 10153},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan LRT", "Tingkat emisi baseline (Ton CO₂e)": 9843, "Tingkat emisi mitigasi (Ton CO₂e)": 3000, "Penurunan emisi (Ton CO₂e)": 6844},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan biofuel", "Tingkat emisi baseline (Ton CO₂e)": 1974534, "Tingkat emisi mitigasi (Ton CO₂e)": 1262427, "Penurunan emisi (Ton CO₂e)": 712107},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan BBG", "Tingkat emisi baseline (Ton CO₂e)": 70194, "Tingkat emisi mitigasi (Ton CO₂e)": 56951, "Penurunan emisi (Ton CO₂e)": 13243},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Bus listrik", "Tingkat emisi baseline (Ton CO₂e)": 183134, "Tingkat emisi mitigasi (Ton CO₂e)": 38150, "Penurunan emisi (Ton CO₂e)": 144984},
+        {"Sektor": "Transportasi", "Aksi Mitigasi": "Car Free Day", "Tingkat emisi baseline (Ton CO₂e)": 7029, "Tingkat emisi mitigasi (Ton CO₂e)": 0, "Penurunan emisi (Ton CO₂e)": 7029},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "LFG Recovery di TPA Bantar Gebang", "Tingkat emisi baseline (Ton CO₂e)": 1574250, "Tingkat emisi mitigasi (Ton CO₂e)": 1537203, "Penurunan emisi (Ton CO₂e)": 37352},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "Pengomposan sampah organik", "Tingkat emisi baseline (Ton CO₂e)": 1574250, "Tingkat emisi mitigasi (Ton CO₂e)": 1565718, "Penurunan emisi (Ton CO₂e)": 8837},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "Kegiatan 3R kertas", "Tingkat emisi baseline (Ton CO₂e)": 1574250, "Tingkat emisi mitigasi (Ton CO₂e)": 1465372, "Penurunan emisi (Ton CO₂e)": 109183},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "PLTSa dan RDF serta Pemanfaatan/pengolahan lain (maggot, pakan, biodigester, dan sumber energi lainnya)", "Tingkat emisi baseline (Ton CO₂e)": 1574250, "Tingkat emisi mitigasi (Ton CO₂e)": 1558827, "Penurunan emisi (Ton CO₂e)": 15727},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "Landfill Mining", "Tingkat emisi baseline (Ton CO₂e)": 1574250, "Tingkat emisi mitigasi (Ton CO₂e)": 1574269, "Penurunan emisi (Ton CO₂e)": 285},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "Pengolahan limbah cair on-site (IPAL)", "Tingkat emisi baseline (Ton CO₂e)": 1083405, "Tingkat emisi mitigasi (Ton CO₂e)": 1078576, "Penurunan emisi (Ton CO₂e)": 4829},
+        {"Sektor": "Limbah", "Aksi Mitigasi": "Pengolahan limbah cair off-site (IPLT)", "Tingkat emisi baseline (Ton CO₂e)": 1083405, "Tingkat emisi mitigasi (Ton CO₂e)": 1082747, "Penurunan emisi (Ton CO₂e)": 658},
+        {"Sektor": "Kehutanan", "Aksi Mitigasi": "Penanaman/Penghijauan", "Tingkat emisi baseline (Ton CO₂e)": 40967, "Tingkat emisi mitigasi (Ton CO₂e)": 39043, "Penurunan emisi (Ton CO₂e)": 1924},
+        {"Sektor": "Kehutanan", "Aksi Mitigasi": "Konservasi Hutan Mangrove (HL Angke Kapuk)", "Tingkat emisi baseline (Ton CO₂e)": 40967, "Tingkat emisi mitigasi (Ton CO₂e)": 34803, "Penurunan emisi (Ton CO₂e)": 6164},
     ])
 
-    # Sheet 2: Deret Historis Baseline vs Inventori (Gambar 2 Ringkasan Eksekutif, 2015–2030)
+    # Sheet 4: Gambar 2 Ringkasan Eksekutif — Tren Baseline vs Inventori (2015–2030)
     df_tren = pd.DataFrame({
         "Tahun": list(range(2015, 2031)),
         "Baseline_JtTon": [63.0, 64.0, 65.0, 69.0, 73.0, 73.3, 78.0, 81.0, 85.0, 88.0, 92.0, 94.0, 98.0, 100.0, 103.0, 107.0],
         "Inventori_JtTon": [56.7, 58.9, 57.1, 60.0, 60.9, 54.2, 56.7, 60.3, 62.6, 64.5, 66.2, None, None, None, None, None],
     })
 
-    # Sheet 3: Tabel 3 Target Penurunan Emisi GRK Tahunan per 4 Sektor (2025–2030, dalam Gg CO2e)
+    # Sheet 5: Tabel 3 (Halaman 11 PDF) — Target Penurunan Emisi GRK Tahunan per Sektor (2025–2030, Gg CO2e)
     df_tabel3 = pd.DataFrame({
         "Tahun": [2025, 2026, 2027, 2028, 2029, 2030],
         "Energi (Final)": [12198, 14268, 16414, 18638, 20943, 23305],
@@ -218,8 +479,7 @@ def buat_data_acuan():
         "TOTAL": [21114, 23178, 25789, 28521, 31235, 34090],
     })
 
-    # Sheet 4: Tabel 5 Proyeksi Tingkat Emisi 2019–2050 CPOS vs NZE (Disederhanakan 4 Sektor, dalam Gg CO2e)
-    # Catatan: Energi (Final) = Komersial + Rumah Tangga + Industri + Transportasi pada Tabel 5
+    # Sheet 6: Tabel 5 (Halaman 12 PDF) — Proyeksi Tingkat Emisi 2019–2050 CPOS vs NZE (4 Sektor, Gg CO2e)
     df_tabel5 = pd.DataFrame({
         "Tahun": [2019, 2035, 2040, 2045, 2050],
         "Energi (Final)_CPOS": [49898, 60301, 59590, 57832, 55026],
@@ -234,57 +494,94 @@ def buat_data_acuan():
         "Total_NZE": [60933, 68673, 60426, 47415, 29185],
     })
 
-    # Sheet 5: Tabel 2 Rincian Capaian Aksi Mitigasi (Halaman viii–ix, dalam Ton CO2e)
-    df_aksi = pd.DataFrame([
-        {"Sektor": "Energi", "Aksi Mitigasi": "Substitusi BBM ke gas Pembangkit Muara Karang & Tanjung Priok", "Baseline_Ton": 10460482, "Mitigasi_Ton": 7161905, "Reduksi_Ton": 3298577},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Efisiensi energi di pembangkit Muara Karang", "Baseline_Ton": 4197637, "Mitigasi_Ton": 2936879, "Reduksi_Ton": 1260758},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan LHE untuk lampu jalan (PJU)", "Baseline_Ton": 603905, "Mitigasi_Ton": 334548, "Reduksi_Ton": 269357},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan biofuel di subsektor industri", "Baseline_Ton": 372543, "Mitigasi_Ton": 225976, "Reduksi_Ton": 146566},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Penerapan green building di gedung pemerintah & komersial", "Baseline_Ton": 661638, "Mitigasi_Ton": 575090, "Reduksi_Ton": 86547},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan PLTS rooftop gedung & komunal", "Baseline_Ton": 20678, "Mitigasi_Ton": 0, "Reduksi_Ton": 20678},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan biofuel di subsektor komersial", "Baseline_Ton": 24280, "Mitigasi_Ton": 14728, "Reduksi_Ton": 9552},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Energi bersih: PLTSa & pembangkit listrik LFG", "Baseline_Ton": 9036, "Mitigasi_Ton": 847, "Reduksi_Ton": 8189},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Pemadaman listrik berkala (Earth Hour)", "Baseline_Ton": 366, "Mitigasi_Ton": 0, "Reduksi_Ton": 366},
-        {"Sektor": "Energi", "Aksi Mitigasi": "Penggunaan PJU Tenaga Surya (PJU TS)", "Baseline_Ton": 113, "Mitigasi_Ton": 0, "Reduksi_Ton": 113},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Manajemen transportasi melalui penerapan sistem ITS", "Baseline_Ton": 67670762, "Mitigasi_Ton": 58883095, "Reduksi_Ton": 8787667},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Feeder busway", "Baseline_Ton": 1190711, "Mitigasi_Ton": 206661, "Reduksi_Ton": 966073},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan biofuel transportasi", "Baseline_Ton": 1974534, "Mitigasi_Ton": 1262427, "Reduksi_Ton": 712107},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Busway (BRT Transjakarta)", "Baseline_Ton": 451139, "Mitigasi_Ton": 49028, "Reduksi_Ton": 402366},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Bus listrik", "Baseline_Ton": 183134, "Mitigasi_Ton": 38150, "Reduksi_Ton": 144984},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan Kereta Api Listrik (KRL)", "Baseline_Ton": 245318, "Mitigasi_Ton": 144691, "Reduksi_Ton": 100627},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan BBG transportasi", "Baseline_Ton": 70194, "Mitigasi_Ton": 56951, "Reduksi_Ton": 13243},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan MRT", "Baseline_Ton": 16295, "Mitigasi_Ton": 6143, "Reduksi_Ton": 10153},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Car Free Day (CFD)", "Baseline_Ton": 7029, "Mitigasi_Ton": 0, "Reduksi_Ton": 7029},
-        {"Sektor": "Transportasi", "Aksi Mitigasi": "Penggunaan LRT", "Baseline_Ton": 9843, "Mitigasi_Ton": 3000, "Reduksi_Ton": 6844},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "Kegiatan 3R kertas", "Baseline_Ton": 1574250, "Mitigasi_Ton": 1465372, "Reduksi_Ton": 109183},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "LFG Recovery di TPA Bantar Gebang", "Baseline_Ton": 1574250, "Mitigasi_Ton": 1537203, "Reduksi_Ton": 37352},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "PLTSa, RDF, maggot, pakan & biodigester", "Baseline_Ton": 1574250, "Mitigasi_Ton": 1558827, "Reduksi_Ton": 15727},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "Pengomposan sampah organik", "Baseline_Ton": 1574250, "Mitigasi_Ton": 1565718, "Reduksi_Ton": 8837},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "Pengolahan limbah cair on-site (IPAL)", "Baseline_Ton": 1083405, "Mitigasi_Ton": 1078576, "Reduksi_Ton": 4829},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "Pengolahan limbah cair off-site (IPLT)", "Baseline_Ton": 1083405, "Mitigasi_Ton": 1082747, "Reduksi_Ton": 658},
-        {"Sektor": "Limbah", "Aksi Mitigasi": "Landfill Mining", "Baseline_Ton": 1574250, "Mitigasi_Ton": 1574269, "Reduksi_Ton": 285},
-        {"Sektor": "Kehutanan", "Aksi Mitigasi": "Konservasi Hutan Mangrove (HL Angke Kapuk)", "Baseline_Ton": 40967, "Mitigasi_Ton": 34803, "Reduksi_Ton": 6164},
-        {"Sektor": "Kehutanan", "Aksi Mitigasi": "Penanaman / Penghijauan", "Baseline_Ton": 40967, "Mitigasi_Ton": 39043, "Reduksi_Ton": 1924},
-    ])
-
-    return df_profil, df_tren, df_tabel3, df_tabel5, df_aksi
+    return df_ar2, df_ar5, df_aksi, df_tren, df_tabel3, df_tabel5
 
 
-def konversi_ke_excel(df_p, df_tr, df_t3, df_t5, df_ak):
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df_p.to_excel(writer, sheet_name="1_Profil_Utama", index=False)
-        df_tr.to_excel(writer, sheet_name="2_Tren_Historis", index=False)
-        df_t3.to_excel(writer, sheet_name="3_Target_2025_2030", index=False)
-        df_t5.to_excel(writer, sheet_name="4_Proyeksi_2035_2050", index=False)
-        df_ak.to_excel(writer, sheet_name="5_Aksi_Mitigasi", index=False)
-    return buffer.getvalue()
+def ekstrak_profil_dari_matriks(df_ar2, df_ar5, df_tren):
+    col_sektor = df_ar2.columns[0]
+    tahun_cols = [str(c).strip() for c in df_ar2.columns[1:] if str(c).strip().isdigit()]
+    thn_terbaru = tahun_cols[-1] if tahun_cols else "2025"
+
+    map_ar2 = {}
+    for _, r in df_ar2.iterrows():
+        k = str(r[col_sektor]).strip()
+        map_ar2[k] = ke_angka(r.get(thn_terbaru, r.iloc[-1]))
+
+    col_sektor5 = df_ar5.columns[0]
+    map_ar5 = {}
+    for _, r in df_ar5.iterrows():
+        k = str(r[col_sektor5]).strip()
+        map_ar5[k] = ke_angka(r.get(thn_terbaru, r.iloc[-1]))
+
+    def cari_nilai(m, kata_kunci, default=0.0):
+        for k, v in m.items():
+            if kata_kunci.lower() in k.lower():
+                return v
+        return default
+
+    gt_ar2 = cari_nilai(map_ar2, "Grand total", 66221)
+    gt_ar5 = cari_nilai(map_ar5, "Grand total", 66967)
+    dir_ar2 = cari_nilai(map_ar2, "Total emisi GRK direct", 31715)
+    dir_ar5 = cari_nilai(map_ar5, "Total emisi GRK direct", 32461)
+    ind_val = cari_nilai(map_ar2, "Emisi GRK indirect", 34507)
+    gwh_val = cari_nilai(map_ar2, "Konsumsi Listrik", 38196)
+
+    energi_ar2 = cari_nilai(map_ar2, "1. Energi", 29311)
+    limbah_ar2 = cari_nilai(map_ar2, "4. Limbah", 2444)
+    afolu_ar2 = cari_nilai(map_ar2, "3. AFOLU", -40)
+
+    top1_trans = cari_nilai(map_ar2, "1A3 Transportasi", 18293)
+    top2_pemb = cari_nilai(map_ar2, "1A1 Industri energi", 7128)
+    top3_ind = cari_nilai(map_ar2, "1A2 Industri Manufaktur", 2348)
+    top4_tpa = cari_nilai(map_ar2, "4A Pengelolaan limbah padat", 1403)
+    if any("1A4b" in k for k in map_ar2.keys()):
+        top5_res = cari_nilai(map_ar2, "1A4b", 1391)
+    else:
+        val_1a4 = cari_nilai(map_ar2, "1A4 Lainnya", 1508)
+        top5_res = 1391 if val_1a4 == 1508 else val_1a4
+
+    df_tr_valid = df_tren.dropna(subset=[df_tren.columns[2]])
+    if not df_tr_valid.empty:
+        bau_last = ke_angka(df_tr_valid.iloc[-1, 1], 92.0)
+        inv_last = ke_angka(df_tr_valid.iloc[-1, 2], 66.2)
+        red_jt = round(bau_last - inv_last, 2)
+        red_pct = round((red_jt / bau_last) * 100.0, 1) if bau_last else 28.0
+    else:
+        red_jt, red_pct = 25.80, 28.0
+
+    return {
+        "Tahun_Laporan": int(thn_terbaru),
+        "Grand_Total_AR2": gt_ar2,
+        "Grand_Total_AR5": gt_ar5,
+        "Total_Direct_AR2": dir_ar2,
+        "Total_Direct_AR5": dir_ar5,
+        "Total_Indirect_Listrik": ind_val,
+        "Konsumsi_Listrik_GWh": gwh_val,
+        "Direct_Energi": energi_ar2,
+        "Direct_Limbah": limbah_ar2,
+        "Direct_AFOLU": afolu_ar2,
+        "Top1_Transportasi": top1_trans,
+        "Top2_Pembangkit": top2_pemb,
+        "Top3_Industri": top3_ind,
+        "Top4_Limbah_TPA": top4_tpa,
+        "Top5_Residensial": top5_res,
+        "Reduksi_Sektoral_JtTon": red_jt,
+        "Persen_Reduksi_Sektoral": red_pct,
+    }
 
 
-df_p_base, df_tr_base, df_t3_base, df_t5_base, df_ak_base = buat_data_acuan()
+df_ar2_base, df_ar5_base, df_ak_base, df_tr_base, df_t3_base, df_t5_base = buat_data_acuan()
+DAFTAR_SHEET_ACUAN = [
+    ("1_Profil_Emisi_AR2", df_ar2_base),
+    ("2_Profil_Emisi_AR5", df_ar5_base),
+    ("3_Capaian_Aksi_Mitigasi_2025", df_ak_base),
+    ("4_Tren_Baseline_Inventori", df_tr_base),
+    ("5_Target_2025_2030", df_t3_base),
+    ("6_Proyeksi_2035_2050", df_t5_base),
+]
 
 # ==========================================================
-# 3. HEADER UTAMA & PANEL UNDUH / UNGGAH EXCEL TAHUNAN
+# 4. HEADER UTAMA & PANEL UNDUH / UNGGAH EXCEL TAHUNAN
 # ==========================================================
 st.markdown(
     """
@@ -319,11 +616,11 @@ st.markdown(
 )
 
 with st.expander("📂 Panel Pemutakhiran Data Tahunan (Unduh Template Acuan / Unggah Spreadsheet Baru)", expanded=False):
-    u1, u2, u3 = st.columns([1.1, 1.4, 1], gap="medium")
+    u1, u2, u3 = st.columns([1.15, 1.35, 1], gap="medium")
     with u1:
         st.markdown("**1. Unduh Spreadsheet Acuan**")
-        st.caption("Berisi 5 tabel Ringkasan Eksekutif Laporan 2026 yang siap diedit untuk pembaruan tahunan.")
-        file_excel_acuan = konversi_ke_excel(df_p_base, df_tr_base, df_t3_base, df_t5_base, df_ak_base)
+        st.caption("Berisi 6 sheet dengan format tabel matriks persis seperti Ringkasan Eksekutif Laporan 2026.")
+        file_excel_acuan = konversi_ke_excel(DAFTAR_SHEET_ACUAN)
         st.download_button(
             "📥 Unduh Template Excel Acuan (.xlsx)",
             data=file_excel_acuan,
@@ -333,7 +630,7 @@ with st.expander("📂 Panel Pemutakhiran Data Tahunan (Unduh Template Acuan / U
         )
     with u2:
         st.markdown("**2. Unggah Spreadsheet yang Telah Diedit**")
-        uploaded_excel = st.file_uploader("Pilih file .xlsx hasil edit:", type=["xlsx"], label_visibility="collapsed")
+        uploaded_excel = st.file_uploader("Pilih file .xlsx hasil edit:", type=["xlsx", "xlsm"], label_visibility="collapsed")
     with u3:
         st.markdown("**3. Mode Tampilan Pembanding**")
         tampilkan_delta = st.toggle("Tampilkan Selisih (Δ) vs Data Acuan", value=True)
@@ -342,24 +639,28 @@ with st.expander("📂 Panel Pemutakhiran Data Tahunan (Unduh Template Acuan / U
         else:
             st.info("ℹ️ Menampilkan Data Acuan Bawaan (Laporan 2026).")
 
-# Membaca data dari Excel yang diunggah (jika ada), atau gunakan data acuan
 if uploaded_excel is not None:
     try:
-        xls = pd.ExcelFile(uploaded_excel)
-        df_p = pd.read_excel(xls, "1_Profil_Utama")
-        df_tr = pd.read_excel(xls, "2_Tren_Historis")
-        df_t3 = pd.read_excel(xls, "3_Target_2025_2030")
-        df_t5 = pd.read_excel(xls, "4_Proyeksi_2035_2050")
-        df_ak = pd.read_excel(xls, "5_Aksi_Mitigasi")
+        sheets_dict = baca_excel_aman(uploaded_excel)
+        df_ar2 = sheets_dict.get("1_Profil_Emisi_AR2", df_ar2_base)
+        df_ar5 = sheets_dict.get("2_Profil_Emisi_AR5", df_ar5_base)
+        df_ak = sheets_dict.get("3_Capaian_Aksi_Mitigasi_2025", sheets_dict.get("5_Aksi_Mitigasi", df_ak_base))
+        df_tr = sheets_dict.get("4_Tren_Baseline_Inventori", sheets_dict.get("2_Tren_Historis", df_tr_base))
+        df_t3 = sheets_dict.get("5_Target_2025_2030", sheets_dict.get("3_Target_2025_2030", df_t3_base))
+        df_t5 = sheets_dict.get("6_Proyeksi_2035_2050", sheets_dict.get("4_Proyeksi_2035_2050", df_t5_base))
     except Exception as e:
         st.error(f"Format sheet tidak sesuai template: {e}. Menggunakan data acuan bawaan.")
-        df_p, df_tr, df_t3, df_t5, df_ak = df_p_base, df_tr_base, df_t3_base, df_t5_base, df_ak_base
+        df_ar2, df_ar5, df_ak, df_tr, df_t3, df_t5 = df_ar2_base, df_ar5_base, df_ak_base, df_tr_base, df_t3_base, df_t5_base
 else:
-    df_p, df_tr, df_t3, df_t5, df_ak = df_p_base, df_tr_base, df_t3_base, df_t5_base, df_ak_base
+    df_ar2, df_ar5, df_ak, df_tr, df_t3, df_t5 = df_ar2_base, df_ar5_base, df_ak_base, df_tr_base, df_t3_base, df_t5_base
 
-p_now = dict(zip(df_p["Parameter"], df_p["Nilai"]))
-p_ref = dict(zip(df_p_base["Parameter"], df_p_base["Nilai"]))
+p_ref = ekstrak_profil_dari_matriks(df_ar2_base, df_ar5_base, df_tr_base)
+p_now = ekstrak_profil_dari_matriks(df_ar2, df_ar5, df_tr)
 thn_lap = int(p_now.get("Tahun_Laporan", 2025))
+
+# Standarisasi kolom tabel aksi mitigasi agar mendukung nama kolom Ringkasan Eksekutif maupun singkatan
+kol_reduksi_ak = "Penurunan emisi (Ton CO₂e)" if "Penurunan emisi (Ton CO₂e)" in df_ak.columns else df_ak.columns[-1]
+df_ak[kol_reduksi_ak] = df_ak[kol_reduksi_ak].map(ke_angka)
 
 # ==========================================================
 # BLOK 1: PROFIL EMISI DKI JAKARTA (TAHUN BERJALAN)
@@ -379,8 +680,8 @@ with b1_kiri:
     d_dir = fmt_delta(dir_ar2, p_ref["Total_Direct_AR2"]) if tampilkan_delta else ""
     d_ind = fmt_delta(ind_val, p_ref["Total_Indirect_Listrik"]) if tampilkan_delta else ""
 
-    porsi_dir = (dir_ar2 / gt_ar2) * 100.0
-    porsi_ind = (ind_val / gt_ar2) * 100.0
+    porsi_dir = (dir_ar2 / gt_ar2) * 100.0 if gt_ar2 else 0.0
+    porsi_ind = (ind_val / gt_ar2) * 100.0 if gt_ar2 else 0.0
 
     st.markdown(
         f"""
@@ -490,8 +791,8 @@ with b2_kanan:
         fig_tr.update_xaxes(dtick=1)
         st.plotly_chart(tata_letak(fig_tr, "Juta Ton CO₂e", 225), use_container_width=True, config={"displayModeBar": False})
 
-        bau_now = df_tr_valid["Baseline_JtTon"].iloc[-1]
-        inv_now = df_tr_valid["Inventori_JtTon"].iloc[-1]
+        bau_now = ke_angka(df_tr_valid["Baseline_JtTon"].iloc[-1], 92.0)
+        inv_now = ke_angka(df_tr_valid["Inventori_JtTon"].iloc[-1], 66.2)
         red_jt = p_now["Reduksi_Sektoral_JtTon"]
         red_pct = p_now["Persen_Reduksi_Sektoral"]
         st.markdown(
@@ -515,13 +816,12 @@ with b2_kanan:
         )
 
 # ==========================================================
-# BLOK 3: ROADMAP DEKARBONISASI PER SEKTOR (2025–2050) — PERBAIKAN UTAMA
+# BLOK 3: ROADMAP DEKARBONISASI PER SEKTOR (2025–2050)
 # ==========================================================
 st.markdown('<div class="sec-banner">3. Roadmap Dekarbonisasi per Sektor (2025–2050)</div>', unsafe_allow_html=True)
 
 b3_kiri, b3_kanan = st.columns(2, gap="medium")
 
-# ---- KIRI: TABEL 3 (DERET TAHUNAN 2025–2030 UNTUK 4 SEKTOR) ----
 with b3_kiri:
     with st.container(border=True):
         st.markdown('<div class="pill-title">Target Penurunan Emisi Tahunan per Sektor 2025–2030 (Tabel 3, Gg CO₂e)</div>', unsafe_allow_html=True)
@@ -553,20 +853,18 @@ with b3_kiri:
         fig_t3.update_xaxes(dtick=1)
         st.plotly_chart(tata_letak(fig_t3, "Gg CO₂e", 260), use_container_width=True, config={"displayModeBar": False})
 
-        # Tabel Matriks Deret Tahun 2025-2030 (4 Sektor + Total)
         sektor_t3 = ["Energi (Final)", "Pembangkit Listrik", "Limbah", "FOLU", "TOTAL"]
         rows_t3 = []
         for s in sektor_t3:
             baris = {"Sektor": s}
             for _, r in df_t3.iterrows():
                 baris[str(int(r["Tahun"]))] = fmt_id(r[s])
-            awal = df_t3[s].iloc[0]
-            akhir = df_t3[s].iloc[-1]
+            awal = ke_angka(df_t3[s].iloc[0])
+            akhir = ke_angka(df_t3[s].iloc[-1])
             baris["Perubahan (25→30)"] = ("+" if akhir >= awal else "−") + fmt_id(abs(akhir - awal))
             rows_t3.append(baris)
         st.dataframe(pd.DataFrame(rows_t3), hide_index=True, use_container_width=True)
 
-# ---- KANAN: TABEL 5 (PROYEKSI 2019–2050 CPOS VS NZE UNTUK 4 SEKTOR) ----
 with b3_kanan:
     with st.container(border=True):
         st.markdown('<div class="pill-title">Proyeksi Tingkat Emisi 2019–2050: Skenario CPOS vs NZE (Tabel 5, Gg CO₂e)</div>', unsafe_allow_html=True)
@@ -613,7 +911,6 @@ with b3_kanan:
         fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
         st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
 
-        # Tabel Perbandingan CPOS vs NZE (4 Sektor Gabungan + Total)
         rows_t5 = []
         for label_s, k_c, k_n in [
             ("Energi (Final)", "Energi (Final)_CPOS", "Energi (Final)_NZE"),
@@ -622,9 +919,9 @@ with b3_kanan:
             ("FOLU", "FOLU_CPOS", "FOLU_NZE"),
             ("TOTAL EMISI", "Total_CPOS", "Total_NZE"),
         ]:
-            r_2019 = df_t5[k_c].iloc[0]
-            c_2035, n_2035 = df_t5[k_c].iloc[1], df_t5[k_n].iloc[1]
-            c_2050, n_2050 = df_t5[k_c].iloc[-1], df_t5[k_n].iloc[-1]
+            r_2019 = ke_angka(df_t5[k_c].iloc[0])
+            c_2035, n_2035 = ke_angka(df_t5[k_c].iloc[1]), ke_angka(df_t5[k_n].iloc[1])
+            c_2050, n_2050 = ke_angka(df_t5[k_c].iloc[-1]), ke_angka(df_t5[k_n].iloc[-1])
             rows_t5.append({
                 "Sektor (4 Kelompok)": label_s,
                 "2019 (Ref)": fmt_id(r_2019),
@@ -643,7 +940,7 @@ b4_kiri, b4_kanan = st.columns([1, 1.45], gap="medium")
 
 with b4_kiri:
     with st.container(border=True):
-        total_proyek_jt = df_ak["Reduksi_Ton"].sum() / 1e6
+        total_proyek_jt = df_ak[kol_reduksi_ak].sum() / 1e6
         st.markdown(
             f"""
             <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:12px 16px;margin-bottom:10px;">
@@ -658,21 +955,20 @@ with b4_kiri:
             unsafe_allow_html=True,
         )
         st.markdown('<div class="pill-title">Top 6 Aksi Mitigasi dengan Reduksi Tertinggi</div>', unsafe_allow_html=True)
-        df_top_aksi = df_ak.sort_values("Reduksi_Ton", ascending=False).head(6)
+        df_top_aksi = df_ak.sort_values(kol_reduksi_ak, ascending=False).head(6)
         fig_ak = go.Figure(go.Bar(
-            x=df_top_aksi["Reduksi_Ton"] / 1e6,
+            x=df_top_aksi[kol_reduksi_ak] / 1e6,
             y=df_top_aksi["Aksi Mitigasi"],
             orientation="h",
             marker_color=WARNA["hijau_utama"],
             marker_cornerradius=6,
-            text=[f"<b>{fmt_id(v/1e6, 2)} Jt Ton</b>" for v in df_top_aksi["Reduksi_Ton"]],
+            text=[f"<b>{fmt_id(v/1e6, 2)} Jt Ton</b>" for v in df_top_aksi[kol_reduksi_ak]],
             textposition="auto",
         ))
         fig_ak.update_layout(yaxis=dict(autorange="reversed"))
         st.plotly_chart(tata_letak(fig_ak, "Juta Ton CO₂e", 260, show_legend=False), use_container_width=True, config={"displayModeBar": False})
 
 with b4_kanan:
-    # 4 Kotak Sektor Rapi dalam Grid 2x2 Tanpa Terhimpit
     g_atas1, g_atas2 = st.columns(2, gap="small")
     g_bawah1, g_bawah2 = st.columns(2, gap="small")
 
@@ -686,8 +982,8 @@ with b4_kanan:
     for nama_s, judul_s, warna_s, kol_ui in konfigurasi_sektor:
         with kol_ui:
             with st.container(border=True):
-                sub_df = df_ak[df_ak["Sektor"] == nama_s].sort_values("Reduksi_Ton", ascending=False)
-                tot_s_ton = sub_df["Reduksi_Ton"].sum()
+                sub_df = df_ak[df_ak["Sektor"] == nama_s].sort_values(kol_reduksi_ak, ascending=False)
+                tot_s_ton = sub_df[kol_reduksi_ak].sum()
                 label_tot = f"{fmt_id(tot_s_ton/1e6, 2)} Jt Ton" if tot_s_ton >= 1e5 else f"{fmt_id(tot_s_ton/1e3, 1)} Rb Ton"
                 st.markdown(
                     f"""
@@ -700,6 +996,6 @@ with b4_kanan:
                 )
                 tampil_sub = pd.DataFrame({
                     "Aksi Mitigasi": sub_df["Aksi Mitigasi"],
-                    "Reduksi (Ton)": sub_df["Reduksi_Ton"].map(lambda v: fmt_id(v, 0)),
+                    "Penurunan Emisi (Ton)": sub_df[kol_reduksi_ak].map(lambda v: fmt_id(v, 0)),
                 })
                 st.dataframe(tampil_sub, hide_index=True, use_container_width=True, height=175)
