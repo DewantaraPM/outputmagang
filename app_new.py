@@ -1030,31 +1030,31 @@ with st.container(border=True):
         fill="tonexty",
         fillcolor="rgba(21, 128, 61, 0.13)",
         line=dict(color=WARNA["hijau_utama"], width=3.5),
-        ))
-        maks_y5 = max(df_t5[kol_cpos].max(), df_t5[kol_nze].max())
-        fig_t5 = tata_letak(fig_t5, "Gg CO₂e", 262)
-        fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
-        st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
+    ))
+    maks_y5 = max(df_t5[kol_cpos].max(), df_t5[kol_nze].max())
+    fig_t5 = tata_letak(fig_t5, "Gg CO₂e", 262)
+    fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
+    st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
 
-        rows_t5 = []
-        for label_s, k_c, k_n in [
-            ("Energi (Final)", "Energi (Final)_CPOS", "Energi (Final)_NZE"),
-            ("Pembangkit Listrik", "Pembangkit_CPOS", "Pembangkit_NZE"),
-            ("Limbah", "Limbah_CPOS", "Limbah_NZE"),
-            ("FOLU", "FOLU_CPOS", "FOLU_NZE"),
-            ("TOTAL EMISI", "Total_CPOS", "Total_NZE"),
-        ]:
-            r_2019 = ke_angka(df_t5[k_c].iloc[0])
-            c_2035, n_2035 = ke_angka(df_t5[k_c].iloc[1]), ke_angka(df_t5[k_n].iloc[1])
-            c_2050, n_2050 = ke_angka(df_t5[k_c].iloc[-1]), ke_angka(df_t5[k_n].iloc[-1])
-            rows_t5.append({
-                "Sektor (4 Kelompok)": label_s,
-                "2019 (Ref)": fmt_id(r_2019),
-                "2035 (CPOS | NZE)": f"{fmt_id(c_2035)} | {fmt_id(n_2035)}",
-                "2050 (CPOS | NZE)": f"{fmt_id(c_2050)} | {fmt_id(n_2050)}",
-                "Selisih NZE vs CPOS 2050": "−" + fmt_id(abs(c_2050 - n_2050)),
-            })
-        st.dataframe(pd.DataFrame(rows_t5), hide_index=True, use_container_width=True)
+    rows_t5 = []
+    for label_s, k_c, k_n in [
+        ("Energi (Final)", "Energi (Final)_CPOS", "Energi (Final)_NZE"),
+        ("Pembangkit Listrik", "Pembangkit_CPOS", "Pembangkit_NZE"),
+        ("Limbah", "Limbah_CPOS", "Limbah_NZE"),
+        ("FOLU", "FOLU_CPOS", "FOLU_NZE"),
+        ("TOTAL EMISI", "Total_CPOS", "Total_NZE"),
+    ]:
+        r_2019 = ke_angka(df_t5[k_c].iloc[0])
+        c_2035, n_2035 = ke_angka(df_t5[k_c].iloc[1]), ke_angka(df_t5[k_n].iloc[1])
+        c_2050, n_2050 = ke_angka(df_t5[k_c].iloc[-1]), ke_angka(df_t5[k_n].iloc[-1])
+        rows_t5.append({
+            "Sektor (4 Kelompok)": label_s,
+            "2019 (Ref)": fmt_id(r_2019),
+            "2035 (CPOS | NZE)": f"{fmt_id(c_2035)} | {fmt_id(n_2035)}",
+            "2050 (CPOS | NZE)": f"{fmt_id(c_2050)} | {fmt_id(n_2050)}",
+            "Selisih NZE vs CPOS 2050": "−" + fmt_id(abs(c_2050 - n_2050)),
+        })
+    st.dataframe(pd.DataFrame(rows_t5), hide_index=True, use_container_width=True)
 
 # ==========================================================
 # BLOK 4: RINCIAN CAPAIAN 29 AKSI MITIGASI (TABEL 2 HALAMAN VIII–IX)
