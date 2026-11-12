@@ -93,13 +93,13 @@ st.markdown(
         font-weight: 800;
         letter-spacing: 0.03em;
         text-transform: uppercase;
-        margin: 20px 0 12px 0;
+        margin: 18px 0 12px 0;
         box-shadow: 0 4px 10px rgba(20, 83, 45, 0.12);
     }
     .pill-title {
         background: #14532D;
         color: #FFFFFF;
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         font-weight: 700;
         padding: 5px 14px;
         border-radius: 999px;
@@ -117,13 +117,13 @@ st.markdown(
     .stat-box.blue { background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%); }
     .stat-num { font-size: 1.85rem; font-weight: 800; line-height: 1.1; margin: 2px 0; }
     .stat-lbl { font-size: 0.8rem; opacity: 0.95; font-weight: 600; }
-    .stat-sub { font-size: 0.76rem; opacity: 0.92; margin-top: 4px; }
+    .stat-sub { font-size: 0.75rem; opacity: 0.92; margin-top: 4px; }
     .aksi-header {
         padding: 9px 14px;
         border-radius: 10px;
         color: #FFFFFF;
         font-weight: 700;
-        font-size: 0.92rem;
+        font-size: 0.9rem;
         margin-bottom: 8px;
         display: flex;
         justify-content: space-between;
@@ -141,39 +141,39 @@ st.markdown(
     /* Tabel HTML Penuh Tanpa Scrollbar */
     .table-wrap {
         width: 100%;
-        margin-top: 4px;
+        margin-top: 6px;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #DCECE3;
     }
     table.jkt-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.83rem;
+        font-size: 0.78rem;
         color: #1E293B;
         background: #FFFFFF;
-        border-radius: 10px;
-        overflow: hidden;
-        border: 1px solid #E2E8F0;
     }
     table.jkt-table thead th {
-        background-color: #F0FDF4;
+        background: #F0FDF4;
         color: #14532D;
         font-weight: 700;
-        padding: 8px 10px;
+        padding: 7px 8px;
         border-bottom: 2px solid #BBF7D0;
-        font-size: 0.8rem;
+        line-height: 1.25;
     }
     table.jkt-table tbody td {
-        padding: 7px 10px;
-        border-bottom: 1px solid #EEF2F6;
-        line-height: 1.38;
-        vertical-align: top;
+        padding: 6px 8px;
+        border-bottom: 1px solid #EEF5F0;
+        line-height: 1.35;
+        vertical-align: middle;
     }
     table.jkt-table tbody tr:nth-child(even) {
-        background-color: #F8FAFC;
+        background-color: #FAFCFB;
     }
-    table.jkt-table tbody tr.row-total td {
-        background-color: #DCFCE7 !important;
-        color: #14532D;
+    table.jkt-table tbody tr.tr-total td {
+        background-color: #DCFCE7;
         font-weight: 800;
+        color: #14532D;
         border-top: 1.5px solid #86EFAC;
     }
     </style>
@@ -221,9 +221,9 @@ def ke_angka(val, default=0.0):
         return default
 
 
-def persingkat_aksi(nama):
+def ringkas_nama_aksi(nama):
     peta_singkat = {
-        "Manajemen transportasi melalui penerapan sistem ITS": "Sistem ITS Transportasi",
+        "Manajemen transportasi melalui penerapan sistem ITS": "Sistem Manajemen Lalu Lintas (ITS)",
         "Substitusi BBM ke gas di Pembangkit Muara Karang dan IP Tanjung Priok": "Substitusi Gas Pembangkit MK & Priok",
         "Substitusi BBM ke gas Pembangkit Muara Karang & Tanjung Priok": "Substitusi Gas Pembangkit MK & Priok",
         "Efisien energi di pembangkit Muara Karang": "Efisiensi Pembangkit Muara Karang",
@@ -231,13 +231,11 @@ def persingkat_aksi(nama):
         "Feeder busway": "Feeder Busway",
         "Penggunaan biofuel": "Biofuel Transportasi",
         "Penggunaan biofuel transportasi": "Biofuel Transportasi",
-        "Busway": "Busway (BRT Transjakarta)",
-        "Busway (BRT Transjakarta)": "Busway (BRT Transjakarta)",
-        "Penggunaan LHE untuk lampu jalan": "Lampu Jalan Hemat Energi (LHE)",
-        "Penggunaan LHE untuk lampu jalan (PJU)": "Lampu Jalan Hemat Energi (LHE)",
+        "Busway": "BRT Transjakarta (Busway)",
+        "Busway (BRT Transjakarta)": "BRT Transjakarta (Busway)",
+        "Penggunaan LHE untuk lampu jalan": "Lampu Jalan Hemat Energi (PJU LHE)",
         "Penggunaan biofuel di sub sektor industri": "Biofuel Industri",
-        "Penggunaan biofuel di subsektor industri": "Biofuel Industri",
-        "Bus listrik": "Bus Listrik Transjakarta",
+        "Bus listrik": "Elektrifikasi Bus Listrik",
         "Kegiatan 3R kertas": "Kegiatan 3R Kertas",
         "Penggunaan kereta api Listrik (KRL)": "Kereta Api Listrik (KRL)",
         "Penerapan green building di gedung pemerintah dan komersial": "Green Building Gedung",
@@ -245,27 +243,28 @@ def persingkat_aksi(nama):
     s = str(nama).strip()
     if s in peta_singkat:
         return peta_singkat[s]
-    return s if len(s) <= 36 else s[:33] + "..."
+    return s if len(s) <= 36 else s[:34] + "…"
 
 
-def buat_tabel_html(df, rata_kanan_mulai=1, baris_total=False):
+def buat_tabel_html(df, align_right_cols=None, highlight_last_row=False):
+    if align_right_cols is None:
+        align_right_cols = list(df.columns[1:])
     ths = []
-    for idx, col in enumerate(df.columns):
-        align = "right" if idx >= rata_kanan_mulai else "left"
-        ths.append(f'<th style="text-align:{align};">{escape(str(col))}</th>')
+    for c in df.columns:
+        al = "right" if c in align_right_cols else "left"
+        ths.append(f'<th style="text-align:{al};">{c}</th>')
     thead = f"<thead><tr>{''.join(ths)}</tr></thead>"
 
     trs = []
     n_rows = len(df)
-    for r_idx, row in enumerate(df.itertuples(index=False)):
-        is_last_total = baris_total and (r_idx == n_rows - 1)
-        tr_class = ' class="row-total"' if is_last_total else ""
+    for idx, (_, row) in enumerate(df.iterrows()):
+        is_last = highlight_last_row and (idx == n_rows - 1)
+        row_cls = ' class="tr-total"' if is_last else ""
         tds = []
-        for c_idx, val in enumerate(row):
-            align = "right" if c_idx >= rata_kanan_mulai else "left"
-            nowrap = "white-space:nowrap;font-variant-numeric:tabular-nums;" if c_idx >= rata_kanan_mulai else ""
-            tds.append(f'<td style="text-align:{align};{nowrap}">{escape(str(val))}</td>')
-        trs.append(f"<tr{tr_class}>{''.join(tds)}</tr>")
+        for c in df.columns:
+            al = "right" if c in align_right_cols else "left"
+            tds.append(f'<td style="text-align:{al};">{row[c]}</td>')
+        trs.append(f"<tr{row_cls}>{''.join(tds)}</tr>")
     tbody = f"<tbody>{''.join(trs)}</tbody>"
     return f'<div class="table-wrap"><table class="jkt-table">{thead}{tbody}</table></div>'
 
@@ -763,10 +762,10 @@ with b1_kiri:
     porsi_dir = (dir_ar2 / gt_ar2) * 100.0 if gt_ar2 else 0.0
     porsi_ind = (ind_val / gt_ar2) * 100.0 if gt_ar2 else 0.0
 
-    # Persentase Energi, Limbah, dan AFOLU pada Emisi Direct kini 100% dinamis mengikuti Excel baru
-    p_energi_dir = (p_now["Direct_Energi"] / dir_ar2) * 100.0 if dir_ar2 else 0.0
-    p_limbah_dir = (p_now["Direct_Limbah"] / dir_ar2) * 100.0 if dir_ar2 else 0.0
-    p_afolu_dir = (p_now["Direct_AFOLU"] / dir_ar2) * 100.0 if dir_ar2 else 0.0
+    # Perhitungan Persentase Dinamis untuk Energi, Limbah, dan AFOLU pada Emisi Direct
+    pct_energi_dir = (p_now["Direct_Energi"] / dir_ar2) * 100.0 if dir_ar2 else 0.0
+    pct_limbah_dir = (p_now["Direct_Limbah"] / dir_ar2) * 100.0 if dir_ar2 else 0.0
+    pct_afolu_dir = (p_now["Direct_AFOLU"] / dir_ar2) * 100.0 if dir_ar2 else 0.0
 
     st.markdown(
         f"""
@@ -779,9 +778,9 @@ with b1_kiri:
             <div class="stat-lbl">🏭 EMISI LANGSUNG / DIRECT ({fmt_id(porsi_dir, 0)}%) {d_dir}</div>
             <div class="stat-num">{fmt_id(dir_ar2)} Gg CO₂e</div>
             <div class="stat-sub">
-                Energi: {fmt_id(p_now['Direct_Energi'])} Gg ({fmt_id(p_energi_dir, 0)}%) | 
-                Limbah: {fmt_id(p_now['Direct_Limbah'])} Gg ({fmt_id(p_limbah_dir, 0)}%) | 
-                AFOLU: {fmt_id(p_now['Direct_AFOLU'])} Gg ({fmt_id(p_afolu_dir, 1)}%)
+                Energi: {fmt_id(p_now['Direct_Energi'])} Gg ({fmt_id(pct_energi_dir, 0)}%) | 
+                Limbah: {fmt_id(p_now['Direct_Limbah'])} Gg ({fmt_id(pct_limbah_dir, 0)}%) | 
+                AFOLU: {fmt_id(p_now['Direct_AFOLU'])} Gg ({fmt_id(pct_afolu_dir, 1)}%)
             </div>
         </div>
         <div class="stat-box blue">
@@ -813,7 +812,7 @@ with b1_kanan:
             text=[f"<b>{fmt_id(v)} Gg</b> ({v/dir_ar2*100:.0f}%)" for v in top5_val],
             textposition="auto",
         ))
-        fig_top5.update_layout(yaxis=dict(autorange="reversed"))
+        fig_top5.update_layout(yaxis=dict(autorange="reversed"), xaxis=dict(range=[0, max(top5_val) * 1.18]))
         st.plotly_chart(tata_letak(fig_top5, "Gg CO₂e", 265, show_legend=False), use_container_width=True, config={"displayModeBar": False})
 
 # ==========================================================
@@ -821,7 +820,7 @@ with b1_kanan:
 # ==========================================================
 st.markdown('<div class="sec-banner">2. Tren & Kontribusi Sumber Emisi GRK</div>', unsafe_allow_html=True)
 
-b2_kiri, b2_kanan = st.columns([1.02, 1.38], gap="medium")
+b2_kiri, b2_kanan = st.columns([1.05, 1.35], gap="medium")
 
 with b2_kiri:
     with st.container(border=True):
@@ -829,91 +828,77 @@ with b2_kiri:
         d1, d2 = st.columns(2)
         with d1:
             non_pembangkit = max(0.0, p_now["Direct_Energi"] - p_now["Top2_Pembangkit"])
-            vals_pie1 = [ind_val, non_pembangkit, p_now["Top2_Pembangkit"], p_now["Direct_Limbah"]]
-            tot_p1 = sum(vals_pie1) if sum(vals_pie1) > 0 else 1.0
-            lbls_pie1 = [
-                f"Listrik Indirect ({ind_val/tot_p1*100:.1f}%)",
-                f"Direct Non-Pembangkit ({non_pembangkit/tot_p1*100:.1f}%)",
-                f"Pembangkit Listrik ({p_now['Top2_Pembangkit']/tot_p1*100:.1f}%)",
-                f"Limbah ({p_now['Direct_Limbah']/tot_p1*100:.1f}%)",
-            ]
             fig_pie1 = go.Figure(go.Pie(
-                labels=lbls_pie1,
-                values=vals_pie1,
-                hole=0.62,
+                labels=["Listrik Indirect", "Direct Non-Pembangkit", "Pembangkit Listrik", "Limbah"],
+                values=[ind_val, non_pembangkit, p_now["Top2_Pembangkit"], p_now["Direct_Limbah"]],
+                hole=0.60,
+                domain=dict(y=[0.26, 0.98]),
                 marker=dict(colors=[WARNA["biru"], WARNA["oranye"], WARNA["hijau_utama"], "#8B5CF6"]),
                 textinfo="percent",
                 textposition="inside",
                 insidetextorientation="horizontal",
-                sort=False,
             ))
             fig_pie1.update_layout(
-                annotations=[dict(text=f"<b>Total</b><br>{fmt_id(gt_ar2)}<br>Gg", x=0.5, y=0.5, font_size=11.5, showarrow=False)],
-                margin=dict(l=6, r=6, t=10, b=95),
-                height=295,
+                annotations=[dict(text=f"<b>Total</b><br>{fmt_id(gt_ar2)}<br>Gg", x=0.5, y=0.62, font_size=11.5, showarrow=False)],
+                margin=dict(l=4, r=4, t=6, b=8),
+                height=305,
                 paper_bgcolor="rgba(0,0,0,0)",
-                legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5, font=dict(size=10)),
+                legend=dict(orientation="h", yanchor="top", y=0.20, xanchor="center", x=0.5, font=dict(size=10)),
             )
             st.plotly_chart(fig_pie1, use_container_width=True, config={"displayModeBar": False})
         with d2:
-            vals_pie2 = [p_now["Direct_Energi"], p_now["Direct_Limbah"]]
-            tot_p2 = sum(vals_pie2) if sum(vals_pie2) > 0 else 1.0
-            lbls_pie2 = [
-                f"Energi ({p_now['Direct_Energi']/tot_p2*100:.1f}%)",
-                f"Limbah ({p_now['Direct_Limbah']/tot_p2*100:.1f}%)",
-            ]
             fig_pie2 = go.Figure(go.Pie(
-                labels=lbls_pie2,
-                values=vals_pie2,
-                hole=0.62,
+                labels=[f"Energi ({fmt_id(pct_energi_dir, 0)}%)", f"Limbah ({fmt_id(pct_limbah_dir, 0)}%)"],
+                values=[p_now["Direct_Energi"], p_now["Direct_Limbah"]],
+                hole=0.60,
+                domain=dict(y=[0.26, 0.98]),
                 marker=dict(colors=[WARNA["biru"], WARNA["oranye"]]),
                 textinfo="percent",
                 textposition="inside",
                 insidetextorientation="horizontal",
-                sort=False,
             ))
             fig_pie2.update_layout(
-                annotations=[dict(text=f"<b>Direct</b><br>{fmt_id(dir_ar2)}<br>Gg", x=0.5, y=0.5, font_size=11.5, showarrow=False)],
-                margin=dict(l=6, r=6, t=10, b=95),
-                height=295,
+                annotations=[dict(text=f"<b>Direct</b><br>{fmt_id(dir_ar2)}<br>Gg", x=0.5, y=0.62, font_size=11.5, showarrow=False)],
+                margin=dict(l=4, r=4, t=6, b=8),
+                height=305,
                 paper_bgcolor="rgba(0,0,0,0)",
-                legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5, font=dict(size=10.5)),
+                legend=dict(orientation="h", yanchor="top", y=0.20, xanchor="center", x=0.5, font=dict(size=10)),
             )
             st.plotly_chart(fig_pie2, use_container_width=True, config={"displayModeBar": False})
-        st.caption(f"Catatan: Sektor AFOLU mencatat serapan bersih sebesar **{fmt_id(p_now['Direct_AFOLU'])} Gg CO₂e ({fmt_id(p_afolu_dir, 1)}%)**.")
+        st.caption(
+            f"Catatan: Sektor AFOLU mencatat serapan bersih sebesar **{fmt_id(p_now['Direct_AFOLU'])} Gg CO₂e ({fmt_id(pct_afolu_dir, 1)}%)**."
+        )
 
 with b2_kanan:
     with st.container(border=True):
         st.markdown('<div class="pill-title">Tren Baseline vs Inventori Aktual (2015–2030)</div>', unsafe_allow_html=True)
         fig_tr = go.Figure()
-        df_tr_valid = df_tr.dropna(subset=["Inventori_JtTon"]).copy()
-        df_tr_valid["Inventori_Num"] = df_tr_valid["Inventori_JtTon"].map(ke_angka)
-        df_tr["Baseline_Num"] = df_tr["Baseline_JtTon"].map(ke_angka)
-
+        df_tr_valid = df_tr.dropna(subset=["Inventori_JtTon"])
         fig_tr.add_trace(go.Bar(
             x=df_tr_valid["Tahun"],
-            y=df_tr_valid["Inventori_Num"],
+            y=df_tr_valid["Inventori_JtTon"],
             name="Realisasi Inventori (Juta Ton)",
             marker_color=WARNA["hijau_utama"],
             marker_cornerradius=4,
-            text=[fmt_id(v, 1) for v in df_tr_valid["Inventori_Num"]],
+            text=[fmt_id(ke_angka(v), 1) for v in df_tr_valid["Inventori_JtTon"]],
             textposition="inside",
             insidetextanchor="end",
-            textfont=dict(color="#FFFFFF", size=10, family=FONT),
+            textfont=dict(color="#FFFFFF", size=9.5),
         ))
         fig_tr.add_trace(go.Scatter(
             x=df_tr["Tahun"],
-            y=df_tr["Baseline_Num"],
+            y=df_tr["Baseline_JtTon"],
             name="Tingkat Emisi Baseline",
             mode="lines+markers+text",
-            text=[fmt_id(v, 0) if float(v).is_integer() else fmt_id(v, 1) for v in df_tr["Baseline_Num"]],
+            text=[fmt_id(ke_angka(v), 0) if ke_angka(v).is_integer() else fmt_id(ke_angka(v), 1) for v in df_tr["Baseline_JtTon"]],
             textposition="top center",
-            textfont=dict(color=WARNA["koral"], size=10, family=FONT),
+            textfont=dict(color=WARNA["koral"], size=9.5),
             line=dict(color=WARNA["koral"], width=2.5, dash="dash"),
         ))
-        fig_tr.update_xaxes(dtick=1)
+        maks_bau = max(ke_angka(v) for v in df_tr["Baseline_JtTon"])
         fig_tr = tata_letak(fig_tr, "Juta Ton CO₂e", 255)
-        fig_tr.update_layout(yaxis=dict(range=[0, max(df_tr["Baseline_Num"]) * 1.18]))
+        fig_tr.update_layout(yaxis=dict(range=[0, maks_bau * 1.16]))
+        fig_tr.update_xaxes(dtick=1)
         st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
 
         bau_now = ke_angka(df_tr_valid["Baseline_JtTon"].iloc[-1], 92.0)
@@ -942,16 +927,15 @@ with b2_kanan:
 
 # ==========================================================
 # BLOK 3: ROADMAP DEKARBONISASI PER SEKTOR (2025–2050)
-# Disusun ke bawah agar setiap tabel tampil 100% utuh tanpa scroll
 # ==========================================================
 st.markdown('<div class="sec-banner">3. Roadmap Dekarbonisasi per Sektor (2025–2050)</div>', unsafe_allow_html=True)
 
-# ---- SUB-BLOK 3A: TABEL 3 (TARGET REDUKSI TAHUNAN 2025–2030) ----
-with st.container(border=True):
-    st.markdown('<div class="pill-title">3A. Target Penurunan Emisi Tahunan per Sektor 2025–2030 (Tabel 3, Gg CO₂e)</div>', unsafe_allow_html=True)
-    t3_kiri, t3_kanan = st.columns([1.15, 1], gap="medium")
+b3_kiri, b3_kanan = st.columns([0.95, 1.25], gap="medium")
 
-    with t3_kiri:
+with b3_kiri:
+    with st.container(border=True):
+        st.markdown('<div class="pill-title">Target Penurunan Emisi Tahunan per Sektor 2025–2030 (Tabel 3, Gg CO₂e)</div>', unsafe_allow_html=True)
+
         fig_t3 = go.Figure()
         for kol, wrn in [
             ("Energi (Final)", WARNA["hijau_utama"]),
@@ -977,150 +961,164 @@ with st.container(border=True):
         ))
         fig_t3.update_layout(barmode="stack", yaxis=dict(range=[0, max(df_t3["TOTAL"]) * 1.18]))
         fig_t3.update_xaxes(dtick=1)
-        st.plotly_chart(tata_letak(fig_t3, "Gg CO₂e", 250), use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(tata_letak(fig_t3, "Gg CO₂e", 265), use_container_width=True, config={"displayModeBar": False})
 
-    with t3_kanan:
+        # Tabel HTML Penuh Tanpa Kolom Perubahan (25->30) dan Tanpa Scroll
         sektor_t3 = ["Energi (Final)", "Pembangkit Listrik", "Limbah", "FOLU", "TOTAL"]
         rows_t3 = []
         for s in sektor_t3:
             baris = {"Sektor": s}
             for _, r in df_t3.iterrows():
-                baris[str(int(r["Tahun"]))] = fmt_id(r[s])
+                baris[str(int(r["Tahun"]))] = fmt_id(ke_angka(r[s]))
             rows_t3.append(baris)
-        df_tampil_t3 = pd.DataFrame(rows_t3)
-        st.markdown(buat_tabel_html(df_tampil_t3, rata_kanan_mulai=1, baris_total=True), unsafe_allow_html=True)
+        df_t3_tampil = pd.DataFrame(rows_t3)
+        st.markdown(buat_tabel_html(df_t3_tampil, highlight_last_row=True), unsafe_allow_html=True)
 
-# ---- SUB-BLOK 3B: TABEL 5 (PROYEKSI TINGKAT EMISI 2019–2050 CPOS VS NZE) ----
-with st.container(border=True):
-    st.markdown('<div class="pill-title">3B. Proyeksi Tingkat Emisi 2019–2050: Skenario CPOS vs NZE (Tabel 5, Gg CO₂e)</div>', unsafe_allow_html=True)
+with b3_kanan:
+    with st.container(border=True):
+        st.markdown('<div class="pill-title">Proyeksi Tingkat Emisi 2019–2050: Skenario CPOS vs NZE (Tabel 5, Gg CO₂e)</div>', unsafe_allow_html=True)
 
-    pilihan_sektor_t5 = st.selectbox(
-        "Pilih Sektor untuk Grafik Perbandingan CPOS vs NZE:",
-        ["Total Seluruh Sektor", "Energi (Final) [Komersial+RT+Industri+Transportasi]", "Pembangkit", "Limbah", "FOLU"],
-        index=0,
-        label_visibility="collapsed",
-    )
-    peta_kol_t5 = {
-        "Total Seluruh Sektor": ("Total_CPOS", "Total_NZE"),
-        "Energi (Final) [Komersial+RT+Industri+Transportasi]": ("Energi (Final)_CPOS", "Energi (Final)_NZE"),
-        "Pembangkit": ("Pembangkit_CPOS", "Pembangkit_NZE"),
-        "Limbah": ("Limbah_CPOS", "Limbah_NZE"),
-        "FOLU": ("FOLU_CPOS", "FOLU_NZE"),
-    }
-    kol_cpos, kol_nze = peta_kol_t5[pilihan_sektor_t5]
-    x_thn_t5 = df_t5["Tahun"].astype(str)
+        pilihan_sektor_t5 = st.selectbox(
+            "Pilih Sektor untuk Grafik Perbandingan CPOS vs NZE:",
+            ["Total Seluruh Sektor", "Energi (Final) [Komersial+RT+Industri+Transportasi]", "Pembangkit", "Limbah", "FOLU"],
+            index=0,
+            label_visibility="collapsed",
+        )
+        peta_kol_t5 = {
+            "Total Seluruh Sektor": ("Total_CPOS", "Total_NZE"),
+            "Energi (Final) [Komersial+RT+Industri+Transportasi]": ("Energi (Final)_CPOS", "Energi (Final)_NZE"),
+            "Pembangkit": ("Pembangkit_CPOS", "Pembangkit_NZE"),
+            "Limbah": ("Limbah_CPOS", "Limbah_NZE"),
+            "FOLU": ("FOLU_CPOS", "FOLU_NZE"),
+        }
+        kol_cpos, kol_nze = peta_kol_t5[pilihan_sektor_t5]
+        x_thn_t5 = df_t5["Tahun"].astype(str)
 
-    fig_t5 = go.Figure()
-    fig_t5.add_trace(go.Scatter(
-        x=x_thn_t5,
-        y=df_t5[kol_cpos],
-        name="Skenario CPOS (Kebijakan Berjalan)",
-        mode="lines+markers+text",
-        text=[fmt_id(v) for v in df_t5[kol_cpos]],
-        textposition="top center",
-        line=dict(color=WARNA["oranye"], width=3, dash="dash"),
-    ))
-    fig_t5.add_trace(go.Scatter(
-        x=x_thn_t5,
-        y=df_t5[kol_nze],
-        name="Skenario NZE (Net Zero Emission)",
-        mode="lines+markers+text",
-        text=[fmt_id(v) for v in df_t5[kol_nze]],
-        textposition="bottom center",
-        fill="tonexty",
-        fillcolor="rgba(21, 128, 61, 0.13)",
-        line=dict(color=WARNA["hijau_utama"], width=3.5),
-    ))
-    maks_y5 = max(df_t5[kol_cpos].max(), df_t5[kol_nze].max())
-    fig_t5 = tata_letak(fig_t5, "Gg CO₂e", 262)
-    fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
-    st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
+        fig_t5 = go.Figure()
+        fig_t5.add_trace(go.Scatter(
+            x=x_thn_t5,
+            y=df_t5[kol_cpos],
+            name="Skenario CPOS (Kebijakan Berjalan)",
+            mode="lines+markers+text",
+            text=[fmt_id(v) for v in df_t5[kol_cpos]],
+            textposition="top center",
+            line=dict(color=WARNA["oranye"], width=3, dash="dash"),
+        ))
+        fig_t5.add_trace(go.Scatter(
+            x=x_thn_t5,
+            y=df_t5[kol_nze],
+            name="Skenario NZE (Net Zero Emission)",
+            mode="lines+markers+text",
+            text=[fmt_id(v) for v in df_t5[kol_nze]],
+            textposition="bottom center",
+            fill="tonexty",
+            fillcolor="rgba(21, 128, 61, 0.13)",
+            line=dict(color=WARNA["hijau_utama"], width=3.5),
+        ))
+        maks_y5 = max(df_t5[kol_cpos].max(), df_t5[kol_nze].max())
+        fig_t5 = tata_letak(fig_t5, "Gg CO₂e", 220)
+        fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
+        st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
 
-    rows_t5 = []
-    for label_s, k_c, k_n in [
-        ("Energi (Final)", "Energi (Final)_CPOS", "Energi (Final)_NZE"),
-        ("Pembangkit Listrik", "Pembangkit_CPOS", "Pembangkit_NZE"),
-        ("Limbah", "Limbah_CPOS", "Limbah_NZE"),
-        ("FOLU", "FOLU_CPOS", "FOLU_NZE"),
-        ("TOTAL EMISI", "Total_CPOS", "Total_NZE"),
-    ]:
-        r_2019 = ke_angka(df_t5[k_c].iloc[0])
-        c_2035, n_2035 = ke_angka(df_t5[k_c].iloc[1]), ke_angka(df_t5[k_n].iloc[1])
-        c_2050, n_2050 = ke_angka(df_t5[k_c].iloc[-1]), ke_angka(df_t5[k_n].iloc[-1])
-        rows_t5.append({
-            "Sektor (4 Kelompok)": label_s,
-            "2019 (Ref)": fmt_id(r_2019),
-            "2035 (CPOS | NZE)": f"{fmt_id(c_2035)} | {fmt_id(n_2035)}",
-            "2050 (CPOS | NZE)": f"{fmt_id(c_2050)} | {fmt_id(n_2050)}",
-            "Selisih NZE vs CPOS 2050": "−" + fmt_id(abs(c_2050 - n_2050)),
-        })
-    st.dataframe(pd.DataFrame(rows_t5), hide_index=True, use_container_width=True)
+        # Tabel HTML Penuh: Kolom NZE lalu CPOS terpisah untuk seluruh tahun (2019, 2035, 2040, 2045, 2050)
+        rows_t5 = []
+        for label_s, k_c, k_n in [
+            ("Energi (Final)", "Energi (Final)_CPOS", "Energi (Final)_NZE"),
+            ("Pembangkit Listrik", "Pembangkit_CPOS", "Pembangkit_NZE"),
+            ("Limbah", "Limbah_CPOS", "Limbah_NZE"),
+            ("FOLU", "FOLU_CPOS", "FOLU_NZE"),
+            ("TOTAL EMISI", "Total_CPOS", "Total_NZE"),
+        ]:
+            baris_5 = {"Sektor": label_s}
+            for idx_r, r_t5 in df_t5.iterrows():
+                thn_str = str(int(r_t5["Tahun"]))
+                if idx_r == 0:
+                    baris_5[f"{thn_str}<br>(Ref)"] = fmt_id(ke_angka(r_t5[k_c]))
+                else:
+                    baris_5[f"{thn_str}<br>NZE"] = fmt_id(ke_angka(r_t5[k_n]))
+                    baris_5[f"{thn_str}<br>CPOS"] = fmt_id(ke_angka(r_t5[k_c]))
+            rows_t5.append(baris_5)
+        df_t5_tampil = pd.DataFrame(rows_t5)
+        st.markdown(buat_tabel_html(df_t5_tampil, highlight_last_row=True), unsafe_allow_html=True)
 
 # ==========================================================
-# BLOK 4: RINCIAN CAPAIAN 29 AKSI MITIGASI (TABEL 2 HALAMAN VIII–IX)
+# BLOK 4: RINCIAN CAPAIAN 29 AKSI MITIGASI (TANPA SCROLL)
 # ==========================================================
 st.markdown(f'<div class="sec-banner">4. Rincian Capaian {len(df_ak)} Aksi Mitigasi ({thn_lap})</div>', unsafe_allow_html=True)
 
-b4_kiri, b4_kanan = st.columns([1, 1.45], gap="medium")
+# Baris Atas Blok 4: Ringkasan Total & Grafik Top 6 Aksi Mitigasi (dengan Nama Ringkas)
+b4_atas_kiri, b4_atas_kanan = st.columns([0.9, 1.5], gap="medium")
 
-with b4_kiri:
+with b4_atas_kiri:
     with st.container(border=True):
         total_proyek_jt = df_ak[kol_reduksi_ak].sum() / 1e6
         st.markdown(
             f"""
-            <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:12px 16px;margin-bottom:10px;">
-                <div style="font-size:0.78rem;font-weight:700;color:#166534;text-transform:uppercase;">Total Capaian Penurunan Emisi</div>
-                <div style="font-size:1.75rem;font-weight:800;color:#14532D;">{len(df_ak)} Aksi Mitigasi</div>
-                <div style="font-size:0.84rem;color:#1E293B;">
-                    Reduksi Sektoral: <b>{fmt_id(p_now['Reduksi_Sektoral_JtTon'], 2)} Jt Ton ({fmt_id(p_now['Persen_Reduksi_Sektoral'], 1)}%)</b><br>
-                    Akumulasi Tabel 2 Proyek: <b>{fmt_id(total_proyek_jt, 2)} Jt Ton CO₂e</b>
+            <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:14px;padding:18px 20px;">
+                <div style="font-size:0.8rem;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.03em;">
+                    Total Capaian Penurunan Emisi ({thn_lap})
+                </div>
+                <div style="font-size:2.2rem;font-weight:800;color:#14532D;margin:6px 0;">
+                    {len(df_ak)} Aksi Mitigasi
+                </div>
+                <div style="font-size:0.9rem;color:#1E293B;line-height:1.65;">
+                    • Reduksi Sektoral (Baseline − Inventori): <b>{fmt_id(p_now['Reduksi_Sektoral_JtTon'], 2)} Jt Ton ({fmt_id(p_now['Persen_Reduksi_Sektoral'], 1)}%)</b><br>
+                    • Akumulasi Tabel 2 Proyek Terverifikasi: <b>{fmt_id(total_proyek_jt, 2)} Jt Ton CO₂e</b>
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+
+with b4_atas_kanan:
+    with st.container(border=True):
         st.markdown('<div class="pill-title">Top 6 Aksi Mitigasi dengan Reduksi Tertinggi</div>', unsafe_allow_html=True)
-        df_top_aksi = df_ak.sort_values(kol_reduksi_ak, ascending=False).head(6)
+        df_top_aksi = df_ak.sort_values(kol_reduksi_ak, ascending=False).head(6).copy()
+        df_top_aksi["Nama_Ringkas"] = df_top_aksi["Aksi Mitigasi"].map(ringkas_nama_aksi)
+        vals_top6_jt = df_top_aksi[kol_reduksi_ak] / 1e6
         fig_ak = go.Figure(go.Bar(
-            x=df_top_aksi[kol_reduksi_ak] / 1e6,
-            y=df_top_aksi["Aksi Mitigasi"],
+            x=vals_top6_jt,
+            y=df_top_aksi["Nama_Ringkas"],
             orientation="h",
             marker_color=WARNA["hijau_utama"],
             marker_cornerradius=6,
-            text=[f"<b>{fmt_id(v/1e6, 2)} Jt Ton</b>" for v in df_top_aksi[kol_reduksi_ak]],
-            textposition="auto",
+            text=[f"<b>{fmt_id(v, 2)} Jt Ton</b>" for v in vals_top6_jt],
+            textposition="outside",
         ))
-        fig_ak.update_layout(yaxis=dict(autorange="reversed"))
-        st.plotly_chart(tata_letak(fig_ak, "Juta Ton CO₂e", 260, show_legend=False), use_container_width=True, config={"displayModeBar": False})
+        fig_ak.update_layout(
+            yaxis=dict(autorange="reversed"),
+            xaxis=dict(range=[0, max(vals_top6_jt) * 1.25]),
+        )
+        st.plotly_chart(tata_letak(fig_ak, "Juta Ton CO₂e", 230, show_legend=False), use_container_width=True, config={"displayModeBar": False})
 
-with b4_kanan:
-    g_atas1, g_atas2 = st.columns(2, gap="small")
-    g_bawah1, g_bawah2 = st.columns(2, gap="small")
+# Baris Bawah Blok 4: 4 Kotak Sektor Ditampilkan Penuh Tanpa Scrollbar
+g_atas1, g_atas2 = st.columns(2, gap="medium")
+g_bawah1, g_bawah2 = st.columns(2, gap="medium")
 
-    konfigurasi_sektor = [
-        ("Energi", "⚡ Sektor Energi", WARNA["biru"], g_atas1),
-        ("Transportasi", "🚌 Sektor Transportasi", WARNA["teal"], g_atas2),
-        ("Limbah", "♻️ Sektor Limbah", WARNA["oranye"], g_bawah1),
-        ("Kehutanan", "🌳 Sektor Kehutanan", WARNA["hijau_utama"], g_bawah2),
-    ]
+konfigurasi_sektor = [
+    ("Energi", "⚡ Sektor Energi", WARNA["biru"], g_atas1),
+    ("Transportasi", "🚌 Sektor Transportasi", WARNA["teal"], g_atas2),
+    ("Limbah", "♻️ Sektor Limbah", WARNA["oranye"], g_bawah1),
+    ("Kehutanan", "🌳 Sektor Kehutanan", WARNA["hijau_utama"], g_bawah2),
+]
 
-    for nama_s, judul_s, warna_s, kol_ui in konfigurasi_sektor:
-        with kol_ui:
-            with st.container(border=True):
-                sub_df = df_ak[df_ak["Sektor"] == nama_s].sort_values(kol_reduksi_ak, ascending=False)
-                tot_s_ton = sub_df[kol_reduksi_ak].sum()
-                label_tot = f"{fmt_id(tot_s_ton/1e6, 2)} Jt Ton" if tot_s_ton >= 1e5 else f"{fmt_id(tot_s_ton/1e3, 1)} Rb Ton"
-                st.markdown(
-                    f"""
-                    <div class="aksi-header" style="background:{warna_s};">
-                        <span>{judul_s} ({len(sub_df)} Aksi)</span>
-                        <span>{label_tot}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                tampil_sub = pd.DataFrame({
-                    "Aksi Mitigasi": sub_df["Aksi Mitigasi"],
-                    "Penurunan Emisi (Ton)": sub_df[kol_reduksi_ak].map(lambda v: fmt_id(v, 0)),
-                })
-                st.dataframe(tampil_sub, hide_index=True, use_container_width=True, height=175)
+for nama_s, judul_s, warna_s, kol_ui in konfigurasi_sektor:
+    with kol_ui:
+        with st.container(border=True):
+            sub_df = df_ak[df_ak["Sektor"] == nama_s].sort_values(kol_reduksi_ak, ascending=False)
+            tot_s_ton = sub_df[kol_reduksi_ak].sum()
+            label_tot = f"{fmt_id(tot_s_ton/1e6, 2)} Jt Ton" if tot_s_ton >= 1e5 else f"{fmt_id(tot_s_ton/1e3, 1)} Rb Ton"
+            st.markdown(
+                f"""
+                <div class="aksi-header" style="background:{warna_s};">
+                    <span>{judul_s} ({len(sub_df)} Aksi)</span>
+                    <span>{label_tot}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            tampil_sub = pd.DataFrame({
+                "Aksi Mitigasi": sub_df["Aksi Mitigasi"],
+                "Penurunan Emisi (Ton CO₂e)": sub_df[kol_reduksi_ak].map(lambda v: fmt_id(v, 0)),
+            })
+            st.markdown(buat_tabel_html(tampil_sub), unsafe_allow_html=True)
