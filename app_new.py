@@ -1020,7 +1020,7 @@ with st.container(border=True):
         textposition="top center",
         line=dict(color=WARNA["oranye"], width=3, dash="dash"),
     ))
-        fig_t5.add_trace(go.Scatter(
+    fig_t5.add_trace(go.Scatter(
         x=x_thn_t5,
         y=df_t5[kol_nze],
         name="Skenario NZE (Net Zero Emission)",
