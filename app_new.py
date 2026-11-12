@@ -668,8 +668,8 @@ st.markdown(
     <div class="jkt-hero">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
             <div style="flex:1;min-width:300px;">
-                <div class="jkt-badge">🌿 Dinas Lingkungan Hidup Provinsi DKI Jakarta • Ringkasan Eksekutif</div>
-                <div class="jkt-title">Laporan Akhir | Profil Emisi & Capaian Mitigasi GRK DKI Jakarta</div>
+                <div class="jkt-badge">Dinas Lingkungan Hidup Provinsi DKI Jakarta</div>
+                <div class="jkt-title">Profil Emisi & Capaian Mitigasi GRK DKI Jakarta</div>
                 <p class="jkt-sub">
                     Pemutakhiran Data Inventarisasi (2010–2025), Target Tahunan RPRKD (2025–2030), dan Proyeksi Menuju 
                     <i>Net Zero Emission</i> 2050 (Pergub No. 90/2021).
