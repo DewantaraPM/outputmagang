@@ -1020,7 +1020,7 @@ with st.container(border=True):
         textposition="top center",
         line=dict(color=WARNA["oranye"], width=3, dash="dash"),
     ))
-    fig_t5.add_trace(go.Scatter(
+        fig_t5.add_trace(go.Scatter(
         x=x_thn_t5,
         y=df_t5[kol_nze],
         name="Skenario NZE (Net Zero Emission)",
@@ -1028,13 +1028,13 @@ with st.container(border=True):
         text=[fmt_id(v) for v in df_t5[kol_nze]],
         textposition="bottom center",
         fill="tonexty",
-        fillcolor="rgba(21, 128, 61, 0.13",
-            line=dict(color=WARNA["hijau_utama"], width=3.5),
-        ))
-        maks_y5 = max(df_t5[kol_cpos].max(), df_t5[kol_nze].max())
-        fig_t5 = tata_letak(fig_t5, "Gg CO₂e", 222)
-        fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
-        st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
+        fillcolor="rgba(21, 128, 61, 0.13)",
+        line=dict(color=WARNA["hijau_utama"], width=3.5),
+    ))
+    maks_y5 = max(df_t5[kol_cpos].max(), df_t5[kol_nze].max())
+    fig_t5 = tata_letak(fig_t5, "Gg CO₂e", 262)
+    fig_t5.update_layout(yaxis=dict(range=[min(0, df_t5[kol_nze].min() * 1.2), maks_y5 * 1.18]))
+    st.plotly_chart(fig_t5, use_container_width=True, config={"displayModeBar": False})
 
         rows_t5 = []
         for label_s, k_c, k_n in [
